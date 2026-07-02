@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>HotelScout v0.8-countryfix — global country locked suggestions</title>
+<title>HotelScout v0.14 — reverse address fallback</title>
 
 <!-- ============================================================
      EXTERNAL LIBRARIES (loaded from public CDNs, no install)
@@ -456,6 +456,91 @@
     font-weight: 700;
   }
 
+  #mobileSearchButton { display:none; }
+
+  @media(max-width:820px){
+    .app{
+      display:block;
+      height:100vh;
+      height:100dvh;
+      position:relative;
+    }
+    #map{
+      width:100%;
+      height:100vh;
+      height:100dvh;
+    }
+    .panel{
+      position:absolute;
+      left:10px;
+      right:10px;
+      bottom:10px;
+      max-height:78vh;
+      overflow-y:auto;
+      border:1px solid var(--rule);
+      border-radius:18px;
+      box-shadow:0 8px 28px rgba(0,0,0,.28);
+      padding:14px;
+      z-index:80;
+      display:none;
+    }
+    .panel.mobile-open{display:block}
+    #mobileSearchButton{
+      display:block;
+      position:absolute;
+      right:14px;
+      bottom:56px;
+      z-index:90;
+      width:auto;
+      min-width:96px;
+      margin:0;
+      padding:14px 18px;
+      border-radius:999px;
+      background:var(--accent);
+      color:#fff;
+      border:none;
+      box-shadow:0 5px 18px rgba(0,0,0,.35);
+      font:bold 16px system-ui,-apple-system,Segoe UI,sans-serif;
+    }
+    .panel.mobile-open + #map,
+    .panel.mobile-open ~ #mobileSearchButton{display:none}
+    header h1{font-size:24px}
+    header .tag{font-size:12px;margin-bottom:10px}
+    input,button,textarea{font-size:16px !important}
+    button.go{padding:13px;border-radius:11px}
+    .location-panel,.category-panel,.stop{border-radius:12px}
+    .suggestion-btn{padding:11px 10px;font-size:14px;border-radius:10px}
+    #styleSwitcher{top:10px;right:10px;z-index:70}
+  }
+
+  .detail-search-actions {
+    display:grid;
+    grid-template-columns:1fr;
+    gap:8px;
+    margin:12px 0;
+  }
+  .detail-search-btn {
+    display:block;
+    text-align:center;
+    padding:11px 12px;
+    border-radius:10px;
+    background:var(--accent);
+    color:#fff;
+    text-decoration:none;
+    font-weight:700;
+    border:1px solid var(--accent);
+  }
+  .detail-search-btn.secondary {
+    background:#fff;
+    color:var(--accent);
+  }
+  .detail-hint {
+    color:var(--muted);
+    font-size:12px;
+    line-height:1.35;
+    margin:4px 0 10px;
+  }
+
 </style>
 </head>
 
@@ -463,10 +548,10 @@
 <div class="app">
 
   <!-- ===================== LEFT: control panel ===================== -->
-  <div class="panel">
+  <div class="panel" id="searchPanel">
     <header>
-      <h1>HotelScout <span style="font-size:14px;color:var(--muted)">v0.8-countryfix</span></h1>
-      <div class="tag">accommodation nearby or along your route · global country-locked suggestions</div>
+      <h1>HotelScout <span style="font-size:14px;color:var(--muted)">v0.14</span></h1>
+      <div class="tag">accommodation nearby or along your route · BeachScout-style search</div>
     </header>
 
     <div class="location-panel" id="locationPanel">
@@ -503,6 +588,8 @@
         <input id="maxDetour" type="number" value="2" min="0.1" max="20" step="0.5">
       </div>
     </div>
+    <button class="go" id="go">Search Accommodation</button>
+
     <div class="category-panel">
       <label class="category-title">Search categories</label>
       <div class="category-grid" id="categoryGrid">
@@ -522,8 +609,6 @@
     <div class="controls-note" style="color:var(--accent);margin-top:6px">
       Tip: if a dense city returns too many places, narrow the category switches, for example Hotels only or Motels only.
     </div>
-
-    <button class="go" id="go">Show Accommodation</button>
     <div class="controls-note">
       Uses free public services: OSRM for the route, OpenStreetMap (Overpass)
       for accommodation places. Uses public APIs plus the map/database keys already inside this prototype.
@@ -531,7 +616,7 @@
 
     <div id="status"></div>
     <ul class="stops" id="stops"></ul>
-    <div class="empty" id="empty">Allow location for a 3 km accommodation scan, or use the default Los Angeles → Santa Monica route.</div>
+    <div class="empty" id="empty">Default view: Santa Monica. Choose a route or use your location, then press Search Accommodation.</div>
   </div>
 
   <!-- ===================== detail overlay ===================== -->
@@ -542,6 +627,7 @@
 
   <!-- ===================== RIGHT: the map ===================== -->
   <div id="map"></div>
+  <button id="mobileSearchButton" type="button">Search</button>
   <div id="styleSwitcher">
     <button class="style-btn active" data-style="streets">Streets</button>
     <button class="style-btn" data-style="outdoor">Outdoor</button>
@@ -588,8 +674,8 @@ if (mapReady) {
   map = new maplibregl.Map({
     container: 'map',
     style: MAP_STYLES[currentStyle],
-    center: [-118.35, 34.03],
-    zoom: 10
+    center: [-118.4912273, 34.0194704],
+    zoom: 11
   });
 } else {
   document.getElementById('map').innerHTML =
@@ -604,6 +690,16 @@ const turfReady = (typeof turf !== 'undefined');
 /* ---------- Map style switcher ----------
    Switching MapLibre's style WIPES any layers/sources we added (routes, pins),
    so after the new style loads we re-draw whatever's currently on screen. */
+function openMobileSearchPanel(){
+  const panel = document.getElementById("searchPanel") || document.querySelector(".panel");
+  if(panel) panel.classList.add("mobile-open");
+}
+
+function closeMobileSearchPanel(){
+  const panel = document.getElementById("searchPanel") || document.querySelector(".panel");
+  if(panel) panel.classList.remove("mobile-open");
+}
+
 function whenMapStyleReady(fn) {
   if (!mapReady || !map) return;
 
@@ -1420,8 +1516,15 @@ ${categoryLines}
       wikidata: el.tags.wikidata || null,
       wikipedia: el.tags.wikipedia || null,
       // address tags, if present, for display / sanity-checking location
-      addr: [el.tags['addr:housenumber'], el.tags['addr:street'],
-             el.tags['addr:city']].filter(Boolean).join(' ') || null,
+      addr: [
+        el.tags['addr:housenumber'],
+        el.tags['addr:street'],
+        el.tags['addr:suburb'],
+        el.tags['addr:city'],
+        el.tags['addr:postcode'],
+        el.tags['addr:state'],
+        el.tags['addr:country']
+      ].filter(Boolean).join(', ') || null,
       tags: el.tags
     });
   }
@@ -1515,8 +1618,15 @@ ${categoryLines}
       progress: 0,
       wikidata: el.tags.wikidata || null,
       wikipedia: el.tags.wikipedia || null,
-      addr: [el.tags['addr:housenumber'], el.tags['addr:street'],
-             el.tags['addr:city']].filter(Boolean).join(' ') || null,
+      addr: [
+        el.tags['addr:housenumber'],
+        el.tags['addr:street'],
+        el.tags['addr:suburb'],
+        el.tags['addr:city'],
+        el.tags['addr:postcode'],
+        el.tags['addr:state'],
+        el.tags['addr:country']
+      ].filter(Boolean).join(', ') || null,
       tags: el.tags
     });
   }
@@ -2239,7 +2349,6 @@ function hotelLinksHtml(stop, websiteInfo = null) {
 
   // Street View fallback at exact coordinate. If Street View is unavailable,
   // Google Maps falls back to the normal map view nearby.
-  const streetView = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${encodeURIComponent(lat + ',' + lng)}`;
 
   const parts = [];
   if (website) parts.push(`<a href="${escapeHtml(website)}" target="_blank" rel="noopener">Official website</a>`);
@@ -2247,7 +2356,6 @@ function hotelLinksHtml(stop, websiteInfo = null) {
 
   parts.push(`<a href="${escapeHtml(businessMaps)}" target="_blank" rel="noopener">Google Maps listing</a>`);
   parts.push(`<a href="${escapeHtml(coordinateMaps)}" target="_blank" rel="noopener">Exact map point</a>`);
-  parts.push(`<a href="${escapeHtml(streetView)}" target="_blank" rel="noopener">Street View / coordinate</a>`);
 
   return `<div class="meta" style="font-size:13px;margin-top:8px;display:flex;gap:10px;flex-wrap:wrap">${parts.join(' · ')}</div>`;
 }
@@ -2395,8 +2503,12 @@ function accommodationInfoHtml(stop, websiteInfo = null) {
   const address = [
     tags['addr:housenumber'],
     tags['addr:street'],
-    tags['addr:city']
-  ].filter(Boolean).join(' ');
+    tags['addr:suburb'],
+    tags['addr:city'],
+    tags['addr:postcode'],
+    tags['addr:state'],
+    tags['addr:country']
+  ].filter(Boolean).join(', ');
 
   const rows = [];
   rows.push(`<div class="hotel-info-row">🏷 <b>Info rank:</b> ${escapeHtml(hotelRankLabel(stop))}</div>`);
@@ -2415,19 +2527,69 @@ function accommodationInfoHtml(stop, websiteInfo = null) {
   const lng = Number(stop.lng);
   const gmaps = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(stop.name + ' ' + lat + ',' + lng)}`;
   const coordMap = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lat + ',' + lng)}`;
-  const streetView = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${encodeURIComponent(lat + ',' + lng)}`;
   const actions = [];
   if (website) actions.push(`<a class="hotel-action-link" target="_blank" rel="noopener" href="${escapeHtml(website)}">🌐 Official website</a>`);
   actions.push(`<a class="hotel-action-link secondary" target="_blank" rel="noopener" href="${escapeHtml(gmaps)}">🗺 Google Maps listing</a>`);
   actions.push(`<a class="hotel-action-link secondary" target="_blank" rel="noopener" href="${escapeHtml(coordMap)}">📍 Exact map point</a>`);
-  actions.push(`<a class="hotel-action-link secondary" target="_blank" rel="noopener" href="${escapeHtml(streetView)}">👁 Street View / coordinate</a>`);
 
   return `
     <div class="hotel-actions">${actions.join('')}</div>
     <div class="hotel-info-grid">${rows.join('')}</div>
     ${website ? `<div class="photo-note">Website source: ${escapeHtml((websiteInfo && websiteInfo.source) || 'OpenStreetMap')}</div>` : '<div class="no-photo">No official website found after v0.4 lookup: OSM tags + Nominatim extratags + Wikidata P856.</div>'}
-    <div class="photo-note">HotelScout uses official structured sources only. If no Google business entry exists, the coordinate buttons still open the exact map point / nearby Street View.</div>
+    <div class="photo-note">HotelScout uses official structured sources only. If no Google business entry exists, the coordinate buttons still open the exact map point.</div>
   `;
+}
+
+function hsAddressText(stop) {
+  const tags = stop.tags || {};
+  return stop.addr || [
+    tags['addr:housenumber'],
+    tags['addr:street'],
+    tags['addr:city'],
+    tags['addr:state'],
+    tags['addr:country']
+  ].filter(Boolean).join(' ');
+}
+
+function hsSelectedPlaceSearchHtml(stop) {
+  const lat = Number(stop.lat);
+  const lng = Number(stop.lng);
+  const address = hsAddressText(stop);
+  const base = `${stop.name || 'hotel'} ${address || (lat + ',' + lng)}`;
+  const detailSearch = `https://www.google.com/search?q=${encodeURIComponent(base + ' official website phone rating price parking pool breakfast wifi')}`;
+  const mapsSearch = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(base || (lat + ',' + lng))}`;
+  return `
+    <div class="detail-search-actions">
+      <a class="detail-search-btn" target="_blank" rel="noopener" href="${escapeHtml(detailSearch)}">🔎 Search contact details</a>
+      <a class="detail-search-btn secondary" target="_blank" rel="noopener" href="${escapeHtml(mapsSearch)}">🗺 Open selected place in Google Maps</a>
+    </div>
+    <div class="detail-hint">Detailed lookup runs only for this selected accommodation.</div>
+  `;
+}
+
+async function reverseAddressFromLatLng(lat, lng) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&zoom=18&addressdetails=1`;
+    const r = await fetch(url, { headers: nominatimHeaders() });
+    if (!r.ok) return '';
+    const j = await r.json();
+    const a = j.address || {};
+
+    const parts = [
+      a.house_number,
+      a.road || a.pedestrian || a.footway || a.street,
+      a.suburb || a.neighbourhood,
+      a.city || a.town || a.village || a.municipality,
+      a.postcode,
+      a.state,
+      a.country
+    ].filter(Boolean);
+
+    return parts.length ? parts.join(', ') : (j.display_name || '');
+  } catch (e) {
+    console.log('Reverse address lookup failed:', e);
+    return '';
+  }
 }
 
 async function openDetail(poiId) {
@@ -2441,9 +2603,8 @@ async function openDetail(poiId) {
 
   const body = $('detailBody');
   body.innerHTML = `<h2><span class="num-badge">${num}</span> ${s.name}</h2>
-    <div class="meta" style="color:var(--muted);font-size:13px">
-      ${s.kind} · ${s.nearbyMode ? `${s.detourKm.toFixed(1)} km from your location` : `${s.alongKm.toFixed(0)} km in · ${(s.detourKm*1000).toFixed(0)} m detour`}</div>
-    <div class="summary">Loading official links…</div>`;
+    <div class="meta" style="color:var(--muted);font-size:13px">${s.kind}</div>
+    <div class="summary">Loading address from OpenStreetMap / coordinates…</div>`;
   $('detail').classList.add('open');
 
   // enrichment (Wikipedia) — pass the whole stop so it can use OSM tags
@@ -2451,8 +2612,19 @@ async function openDetail(poiId) {
   const t = await getTally(poiId);
   const communityPhotos = await getApprovedRoadPhotos(s, 5);
   const websiteInfo = await findBestOfficialWebsite(s);
-  const addrLine = s.addr ? `<div class="meta" style="color:var(--muted);font-size:12px;margin-top:2px">📍 ${s.addr}</div>` : '';
-  const linksLine = hotelLinksHtml(s, websiteInfo);
+  if (!s.addr) {
+    const reverseAddr = await reverseAddressFromLatLng(s.lat, s.lng);
+    if (reverseAddr) s.addr = reverseAddr;
+  }
+  const addrLine = s.addr
+    ? `<div class="meta" style="color:var(--muted);font-size:13px;margin-top:8px">📍 <b>Address:</b> ${escapeHtml(s.addr)}</div>`
+    : `<div class="meta" style="color:var(--muted);font-size:13px;margin-top:8px">📍 Address not found from OpenStreetMap or coordinates</div>`;
+
+  const distanceLine = s.nearbyMode
+    ? `<div class="meta" style="color:var(--muted);font-size:13px;margin-top:4px">📏 <b>Distance:</b> ${s.detourKm.toFixed(1)} km from your location</div>`
+    : `<div class="meta" style="color:var(--muted);font-size:13px;margin-top:4px">🚗 <b>Route:</b> ${s.alongKm.toFixed(0)} km into trip · ↩ ${(s.detourKm*1000).toFixed(0)} m detour</div>`;
+
+  const linksLine = '';
   const officialImg = officialImageFromTags(s.tags || {});
   const descHtml = info && info.text
     ? info.text
@@ -2466,10 +2638,10 @@ async function openDetail(poiId) {
     : '';
   body.innerHTML = `
     <h2 id="titleText"><span class="num-badge">${num}</span> ${s.name}</h2>
-    <div class="meta" style="color:var(--muted);font-size:13px">
-      ${s.kind} · ${s.nearbyMode ? `${s.detourKm.toFixed(1)} km from your location` : `${s.alongKm.toFixed(0)} km in · ${(s.detourKm*1000).toFixed(0)} m detour`}</div>
+    <div class="meta" style="color:var(--muted);font-size:13px">${s.kind}</div>
     ${addrLine}
-    ${linksLine}
+    ${distanceLine}
+    ${hsSelectedPlaceSearchHtml(s)}
     ${accommodationInfoHtml(s, websiteInfo)}
     ${officialImg ? `<img src="${escapeHtml(officialImg)}" alt="Official accommodation photo">` : (info && info.img ? `<img src="${info.img}" alt="">` : '')}
     <div class="summary" id="summaryText">${descHtml}</div>
@@ -2736,18 +2908,18 @@ function useMyLocation() {
 }
 
 function drawSelectedMode() {
+  closeMobileSearchPanel();
   const useLocation = $('useLocationToggle')?.checked;
   if (useLocation) useMyLocation();
   else showRoutesFromInputs();
 }
 
 $('go').onclick = drawSelectedMode;
+if ($('mobileSearchButton')) $('mobileSearchButton').addEventListener('click', openMobileSearchPanel);
 
 window.addEventListener('load', () => {
   trackEvent('app_open', 'startup', {});
-  // Start with the visible default route. If the user turns on the location checkbox,
-  // Show Accommodation will switch to the 3 km nearby search.
-  setTimeout(() => showRoutesFromInputs(), 500);
+  status('Default view: Santa Monica. Choose a route or use your location, then press Search Accommodation.');
 });
 </script>
 </body>
